@@ -354,9 +354,13 @@ func (a *Authenticator) refreshCredsLocked(r *clientauthentication.Response) err
 	a.cachedCreds = newCreds
 	// Only close all connections when TLS cert rotates. Token rotation doesn't
 	// need the extra noise.
-	if a.onRotate != nil && oldCreds != nil && !reflect.DeepEqual(oldCreds.cert, a.cachedCreds.cert) {
-		metrics.ClientCertRotationAge.Observe(oldCreds.cert.Leaf.NotAfter.Sub(oldCreds.cert.Leaf.NotBefore))
-		a.onRotate()
+	if oldCreds != nil && !reflect.DeepEqual(oldCreds.cert, a.cachedCreds.cert) {
+		if oldCreds.cert != nil { // Can be nil if the exec auth plugin only returned token auth.
+			metrics.ClientCertRotationAge.Observe(time.Now().Sub(oldCreds.cert.Leaf.NotBefore))
+		}
+		if a.onRotate != nil {
+			a.onRotate()
+		}
 	}
 	metrics.ClientCertExpiration.Set(newCreds.cert.Leaf.NotAfter)
 	return nil
