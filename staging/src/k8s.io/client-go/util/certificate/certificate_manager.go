@@ -115,6 +115,9 @@ type Config struct {
 	// CertificateExpiration will record a metric that shows the remaining
 	// lifetime of the certificate.
 	CertificateExpiration Gauge
+	// CertificateRotation will record a metric showing the time
+	// certificates lived before being rotated.
+	CertificateRotation Histogram
 }
 
 // Store is responsible for getting and updating the current certificate.
@@ -137,6 +140,12 @@ type Store interface {
 // updated.
 type Gauge interface {
 	Set(float64)
+}
+
+// Histogram will record the time a rotated certificate was used before being
+// rotated.
+type Histogram interface {
+	Observe(float64)
 }
 
 // NoCertKeyError indicates there is no cert/key currently available.
@@ -163,6 +172,7 @@ type manager struct {
 	certStore Store
 
 	certificateExpiration Gauge
+	certificateRotation   Histogram
 
 	// the following variables must only be accessed under certAccessLock
 	certAccessLock sync.RWMutex
@@ -203,6 +213,7 @@ func NewManager(config *Config) (Manager, error) {
 		cert:                  cert,
 		forceRotation:         forceRotation,
 		certificateExpiration: config.CertificateExpiration,
+		certificateRotation:   config.CertificateRotation,
 	}
 
 	return &m, nil
@@ -419,6 +430,10 @@ func (m *manager) rotateCerts() (bool, error) {
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("Unable to store the new cert/key pair: %v", err))
 		return false, nil
+	}
+
+	if m.certificateRotation != nil && m.cert != nil {
+		m.certificateRotation.Observe(float64(time.Now().Sub(m.cert.Leaf.NotBefore)))
 	}
 
 	m.updateCached(cert)

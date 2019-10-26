@@ -25,7 +25,7 @@ import (
 	"sort"
 
 	certificates "k8s.io/api/certificates/v1beta1"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	clientset "k8s.io/client-go/kubernetes"
 	certificatesclient "k8s.io/client-go/kubernetes/typed/certificates/v1beta1"
@@ -52,7 +52,7 @@ func NewKubeletServerCertificateManager(kubeClient clientset.Interface, kubeCfg 
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize server certificate store: %v", err)
 	}
-	var certificateExpiration = compbasemetrics.NewGauge(
+	certificateExpiration := compbasemetrics.NewGauge(
 		&compbasemetrics.GaugeOpts{
 			Namespace:      metrics.KubeletSubsystem,
 			Subsystem:      "certificate_manager",
@@ -62,6 +62,18 @@ func NewKubeletServerCertificateManager(kubeClient clientset.Interface, kubeCfg 
 		},
 	)
 	legacyregistry.MustRegister(certificateExpiration)
+
+	certificateRotationAge := compbasemetrics.NewHistogram(
+		&compbasemetrics.HistogramOpts{
+			Namespace: metrics.KubeletSubsystem,
+			Subsystem: "certificate_manager",
+			Name:      "server_rotation_seconds",
+			Help:      "Count of the number of seconds the previous certificate lived before being rotated.",
+			// [1m, 1h, ... exponential x^4 ..., 7.5y]
+			Buckets: append([]float64{60}, compbasemetrics.ExponentialBuckets(3600, 4, 9)...),
+		},
+	)
+	legacyregistry.MustRegister(certificateRotationAge)
 
 	getTemplate := func() *x509.CertificateRequest {
 		hostnames, ips := addressesToHostnamesAndIPs(getAddresses())
